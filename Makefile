@@ -1,4 +1,3 @@
-
 CUR_DIR=$(shell pwd)
 DIRS=util AddressUtil CmdParse CryptoUtil KeyFinderLib CLKeySearchDevice CudaKeySearchDevice cudaMath clUtil cudaUtil secp256k1lib Logger embedcl
 
@@ -13,9 +12,8 @@ CXX=g++
 CXXFLAGS=-O2 -std=c++11
 
 # CUDA variables
-COMPUTE_CAP=30
 NVCC=nvcc
-NVCCFLAGS=-std=c++11 -gencode=arch=compute_${COMPUTE_CAP},code=\"sm_${COMPUTE_CAP}\" -Xptxas="-v" -Xcompiler "${CXXFLAGS}"
+NVCCFLAGS=-std=c++11 -gencode='arch=compute_75,code=sm_75' -gencode='arch=compute_80,code=sm_80' -gencode='arch=compute_86,code=sm_86' -gencode='arch=compute_89,code=sm_89' -gencode='arch=compute_90,code=sm_90' -gencode='arch=compute_90,code=compute_90' -Xptxas=-v -Xcompiler ${CXXFLAGS}
 CUDA_HOME=/usr/local/cuda
 CUDA_LIB=${CUDA_HOME}/lib64
 CUDA_INCLUDE=${CUDA_HOME}/include
