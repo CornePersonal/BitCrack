@@ -2,6 +2,7 @@
 #include "Logger.h"
 #include "util.h"
 #include "CLKeySearchDevice.h"
+#include "CryptoUtil.h"
 
 // Defined in bitcrack_cl.cpp which gets build in the pre-build event
 extern char _bitcrack_cl[];
@@ -184,7 +185,7 @@ void CLKeySearchDevice::setIncrementor(secp256k1::ecpoint &p)
     _clContext->copyHostToDevice(buf, _yInc, 8 * sizeof(unsigned int));
 }
 
-void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride)
+void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride, bool trueRandom)
 {
     if(start.cmp(secp256k1::N) >= 0) {
         throw KeySearchException("Starting key is out of range");
@@ -193,6 +194,8 @@ void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, c
     _start = start;
 
     _stride = stride;
+
+    _trueRandom = trueRandom;
 
     _compression = compression;
 
@@ -216,7 +219,59 @@ void CLKeySearchDevice::doStep()
     try {
         uint64_t numKeys = (uint64_t)_points;
 
-        if(_iterations < 2 && _start.cmp(numKeys) <= 0) {
+        // In true random mode, generate new random starting points for each step
+        if(_trueRandom) {
+            uint64_t totalPoints = (uint64_t)_points;
+            std::vector<secp256k1::uint256> exponents;
+            
+            crypto::Rng rng;
+            
+            // Generate cryptographically secure random keys for each point
+            for(uint64_t i = 0; i < totalPoints; i++) {
+                secp256k1::uint256 randomKey;
+                
+                do {
+                    unsigned char randomBytes[32];
+                    rng.get(randomBytes, 32);
+                    
+                    // Convert bytes to array of unsigned ints (little endian)
+                    unsigned int randomInts[8];
+                    for(int j = 0; j < 8; j++) {
+                        randomInts[j] = ((unsigned int)randomBytes[j * 4]) |
+                                       ((unsigned int)randomBytes[j * 4 + 1] << 8) |
+                                       ((unsigned int)randomBytes[j * 4 + 2] << 16) |
+                                       ((unsigned int)randomBytes[j * 4 + 3] << 24);
+                    }
+                    
+                    randomKey = secp256k1::uint256(randomInts, secp256k1::uint256::LittleEndian);
+                } while(randomKey.isZero() || randomKey.cmp(secp256k1::N) >= 0);
+                
+                exponents.push_back(randomKey);
+            }
+            
+            // Update the device with new random starting points
+            unsigned int *privateKeys = new unsigned int[8 * totalPoints];
+
+            for(int index = 0; index < _points; index++) {
+                splatBigInt(privateKeys, index, exponents[index]);
+            }
+
+            // Copy to device
+            _clContext->copyHostToDevice(privateKeys, _privateKeys, totalPoints * 8 * sizeof(unsigned int));
+
+            delete[] privateKeys;
+
+            // Generate the public keys for these random private keys
+            for(int i = 0; i < 256; i++) {
+                _initKeysKernel->set_args(_points, i, _privateKeys, _chain, _xTable, _yTable, _x, _y);
+                _initKeysKernel->call(_blocks, _threads);
+            }
+            
+            // Update _start to first random key for getNextKey() reporting
+            _start = exponents[0];
+        }
+
+        if(_iterations < 2 && _start.cmp(numKeys) <= 0 && !_trueRandom) {
 
             _stepKernelWithDouble->set_args(
                 _points,

@@ -3,6 +3,7 @@
 #include "util.h"
 #include "cudabridge.h"
 #include "AddressUtil.h"
+#include "CryptoUtil.h"
 
 void CudaKeySearchDevice::cudaCall(cudaError_t err)
 {
@@ -58,7 +59,7 @@ CudaKeySearchDevice::CudaKeySearchDevice(int device, int threads, int pointsPerT
     _pointsPerThread = pointsPerThread;
 }
 
-void CudaKeySearchDevice::init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride)
+void CudaKeySearchDevice::init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride, bool trueRandom)
 {
     if(start.cmp(secp256k1::N) >= 0) {
         throw KeySearchException("Starting key is out of range");
@@ -69,6 +70,8 @@ void CudaKeySearchDevice::init(const secp256k1::uint256 &start, int compression,
     _compression = compression;
 
     _stride = stride;
+
+    _trueRandom = trueRandom;
 
     cudaCall(cudaSetDevice(_device));
 
@@ -146,8 +149,52 @@ void CudaKeySearchDevice::doStep()
 {
     uint64_t numKeys = (uint64_t)_blocks * _threads * _pointsPerThread;
 
+    // In true random mode, generate new random starting points for each step
+    if(_trueRandom) {
+        uint64_t totalPoints = (uint64_t)_pointsPerThread * _threads * _blocks;
+        std::vector<secp256k1::uint256> exponents;
+        
+        crypto::Rng rng;
+        
+        // Generate cryptographically secure random keys for each point
+        for(uint64_t i = 0; i < totalPoints; i++) {
+            secp256k1::uint256 randomKey;
+            
+            do {
+                unsigned char randomBytes[32];
+                rng.get(randomBytes, 32);
+                
+                // Convert bytes to array of unsigned ints (little endian)
+                unsigned int randomInts[8];
+                for(int j = 0; j < 8; j++) {
+                    randomInts[j] = ((unsigned int)randomBytes[j * 4]) |
+                                   ((unsigned int)randomBytes[j * 4 + 1] << 8) |
+                                   ((unsigned int)randomBytes[j * 4 + 2] << 16) |
+                                   ((unsigned int)randomBytes[j * 4 + 3] << 24);
+                }
+                
+                randomKey = secp256k1::uint256(randomInts, secp256k1::uint256::LittleEndian);
+            } while(randomKey.isZero() || randomKey.cmp(secp256k1::N) >= 0);
+            
+            exponents.push_back(randomKey);
+        }
+        
+        // Update the device with new random starting points
+        cudaCall(_deviceKeys.init(_blocks, _threads, _pointsPerThread, exponents));
+        
+        // Generate the public keys for these random private keys
+        for(int i = 1; i <= 256; i++) {
+            cudaCall(_deviceKeys.doStep());
+        }
+        
+        _deviceKeys.clearPrivateKeys();
+        
+        // Update _startExponent to first random key for getNextKey() reporting
+        _startExponent = exponents[0];
+    }
+
     try {
-        if(_iterations < 2 && _startExponent.cmp(numKeys) <= 0) {
+        if(_iterations < 2 && _startExponent.cmp(numKeys) <= 0 && !_trueRandom) {
             callKeyFinderKernel(_blocks, _threads, _pointsPerThread, true, _compression);
         } else {
             callKeyFinderKernel(_blocks, _threads, _pointsPerThread, false, _compression);
