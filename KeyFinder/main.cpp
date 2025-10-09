@@ -56,6 +56,7 @@ typedef struct {
     secp256k1::uint256 stride = 1;
 
     bool follow = false;
+    bool trueRandom = false;
 }RunConfig;
 
 static RunConfig _config;
@@ -217,6 +218,7 @@ void usage()
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
     printf("--random                Start from a random key\n");
+    printf("--truerandom            Generate a new random key for every step\n");
 }
 
 
@@ -403,7 +405,7 @@ int run()
         // Get device context
         KeySearchDevice *d = getDeviceContext(_devices[_config.device], _config.blocks, _config.threads, _config.pointsPerThread);
 
-        KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride);
+        KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride, _config.trueRandom);
 
         f.setResultCallback(resultCallback);
         f.setStatusInterval(_config.statusInterval);
@@ -471,6 +473,7 @@ int main(int argc, char **argv)
     bool optBlocks = false;
     bool optPoints = false;
     bool optRandom = false;
+    bool optTrueRandom = false;
 
     uint32_t shareIdx = 0;
     uint32_t numShares = 0;
@@ -521,6 +524,7 @@ int main(int argc, char **argv)
     parser.add("", "--share", true);
     parser.add("", "--stride", true);
     parser.add("", "--random", false);
+    parser.add("", "--truerandom", false);
 
     try {
         parser.parse(argc, argv);
@@ -608,6 +612,8 @@ int main(int argc, char **argv)
                 _config.follow = true;
             } else if(optArg.equals("", "--random")) {
                 optRandom = true;
+            } else if(optArg.equals("", "--truerandom")) {
+                optTrueRandom = true;
             }
 
 		} catch(std::string err) {
@@ -717,6 +723,25 @@ int main(int argc, char **argv)
         _config.nextKey = randomKey;
         
         Logger::log(LogLevel::Info, "Random start: " + randomKey.toString(16));
+    }
+
+    // Validate and set truerandom mode
+    if(optTrueRandom) {
+        if(_config.checkpointFile.length() > 0) {
+            Logger::log(LogLevel::Error, "--truerandom cannot be used with --continue");
+            return 1;
+        }
+        if(optShares) {
+            Logger::log(LogLevel::Error, "--truerandom cannot be used with --share");
+            return 1;
+        }
+        if(optRandom) {
+            Logger::log(LogLevel::Error, "--truerandom cannot be used with --random");
+            return 1;
+        }
+        
+        _config.trueRandom = true;
+        Logger::log(LogLevel::Info, "True random mode enabled - generating new random keys at every step");
     }
 
     return run();
