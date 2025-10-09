@@ -12,6 +12,8 @@ CLUnitTests/test.cl
 
 # Linux build results
 *.o
+lib/
+bin/
 
 # CUDA build results
 *.cuo
