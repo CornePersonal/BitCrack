@@ -378,9 +378,13 @@ int run()
     }
 
     Logger::log(LogLevel::Info, "Compression: " + getCompressionString(_config.compression));
-    Logger::log(LogLevel::Info, "Starting at: " + _config.nextKey.toString());
-    Logger::log(LogLevel::Info, "Ending at:   " + _config.endKey.toString());
-    Logger::log(LogLevel::Info, "Counting by: " + _config.stride.toString());
+    
+    // In true random mode, starting/ending keys and stride are not relevant
+    if(!_config.trueRandom) {
+        Logger::log(LogLevel::Info, "Starting at: " + _config.nextKey.toString());
+        Logger::log(LogLevel::Info, "Ending at:   " + _config.endKey.toString());
+        Logger::log(LogLevel::Info, "Counting by: " + _config.stride.toString());
+    }
 
     try {
 
