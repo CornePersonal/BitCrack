@@ -474,6 +474,7 @@ int main(int argc, char **argv)
     bool optPoints = false;
     bool optRandom = false;
     bool optTrueRandom = false;
+    bool optKeyspace = false;
 
     uint32_t shareIdx = 0;
     uint32_t numShares = 0;
@@ -589,6 +590,7 @@ int main(int argc, char **argv)
                 _config.startKey = start;
                 _config.nextKey = start;
                 _config.endKey = end;
+                optKeyspace = true;
             } else if(optArg.equals("", "--share")) {
                 if(!parseShare(optArg.arg, shareIdx, numShares)) {
                     throw std::string("Invalid argument");
@@ -737,6 +739,10 @@ int main(int argc, char **argv)
         }
         if(optRandom) {
             Logger::log(LogLevel::Error, "--truerandom cannot be used with --random");
+            return 1;
+        }
+        if(optKeyspace) {
+            Logger::log(LogLevel::Error, "--truerandom cannot be used with --keyspace");
             return 1;
         }
         
