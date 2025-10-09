@@ -81,7 +81,10 @@ void CudaKeySearchDevice::init(const secp256k1::uint256 &start, int compression,
     // Use a larger portion of shared memory for L1 cache
     cudaCall(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
 
-    generateStartingPoints();
+    // In true random mode, starting points will be generated in doStep(), so skip initial generation
+    if(!_trueRandom) {
+        generateStartingPoints();
+    }
 
     cudaCall(allocateChainBuf(_threads * _blocks * _pointsPerThread));
 

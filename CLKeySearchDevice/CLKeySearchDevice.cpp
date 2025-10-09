@@ -202,7 +202,10 @@ void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, c
     try {
         allocateBuffers();
 
-        generateStartingPoints();
+        // In true random mode, starting points will be generated in doStep(), so skip initial generation
+        if(!_trueRandom) {
+            generateStartingPoints();
+        }
 
         // Set the incrementor
         secp256k1::ecpoint g = secp256k1::G();
