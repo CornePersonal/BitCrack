@@ -9,6 +9,7 @@
 #include "CmdParse.h"
 #include "Logger.h"
 #include "ConfigFile.h"
+#include "CryptoUtil.h"
 
 #include "DeviceManager.h"
 
@@ -215,6 +216,7 @@ void usage()
     printf("--stride N              Increment by N keys at a time\n");
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
+    printf("--random                Start from a random key\n");
 }
 
 
@@ -468,6 +470,7 @@ int main(int argc, char **argv)
     bool optThreads = false;
     bool optBlocks = false;
     bool optPoints = false;
+    bool optRandom = false;
 
     uint32_t shareIdx = 0;
     uint32_t numShares = 0;
@@ -517,6 +520,7 @@ int main(int argc, char **argv)
     parser.add("", "--continue", true);
     parser.add("", "--share", true);
     parser.add("", "--stride", true);
+    parser.add("", "--random", false);
 
     try {
         parser.parse(argc, argv);
@@ -602,6 +606,8 @@ int main(int argc, char **argv)
                 }
             } else if(optArg.equals("-f", "--follow")) {
                 _config.follow = true;
+            } else if(optArg.equals("", "--random")) {
+                optRandom = true;
             }
 
 		} catch(std::string err) {
@@ -674,6 +680,43 @@ int main(int argc, char **argv)
 
     if(_config.checkpointFile.length() > 0) {
         readCheckpointFile();
+    }
+
+    // Generate a random starting key if --random is specified
+    if(optRandom) {
+        if(_config.checkpointFile.length() > 0) {
+            Logger::log(LogLevel::Error, "--random cannot be used with --continue");
+            return 1;
+        }
+        if(optShares) {
+            Logger::log(LogLevel::Error, "--random cannot be used with --share");
+            return 1;
+        }
+
+        // Generate a random 256-bit key
+        crypto::Rng rng;
+        secp256k1::uint256 randomKey;
+        
+        do {
+            unsigned char randomBytes[32];
+            rng.get(randomBytes, 32);
+            
+            // Convert bytes to array of unsigned ints (little endian)
+            unsigned int randomInts[8];
+            for(int i = 0; i < 8; i++) {
+                randomInts[i] = ((unsigned int)randomBytes[i * 4]) |
+                               ((unsigned int)randomBytes[i * 4 + 1] << 8) |
+                               ((unsigned int)randomBytes[i * 4 + 2] << 16) |
+                               ((unsigned int)randomBytes[i * 4 + 3] << 24);
+            }
+            
+            randomKey = secp256k1::uint256(randomInts, secp256k1::uint256::LittleEndian);
+        } while(randomKey.isZero() || randomKey.cmp(secp256k1::N) >= 0);
+        
+        _config.startKey = randomKey;
+        _config.nextKey = randomKey;
+        
+        Logger::log(LogLevel::Info, "Random start: " + randomKey.toString(16));
     }
 
     return run();
