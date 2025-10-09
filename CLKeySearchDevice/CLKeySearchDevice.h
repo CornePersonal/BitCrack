@@ -46,6 +46,8 @@ private:
 
     secp256k1::uint256 _stride = 1;
 
+    bool _randomMode = false;
+
     std::string _deviceName;
 
     // Device memory pointers
@@ -114,7 +116,7 @@ public:
 
 
     // Initialize the device
-    virtual void init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride);
+    virtual void init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride, bool randomMode = false);
 
     // Perform one iteration
     virtual void doStep();

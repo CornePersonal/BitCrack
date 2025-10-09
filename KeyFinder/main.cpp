@@ -55,6 +55,7 @@ typedef struct {
     secp256k1::uint256 stride = 1;
 
     bool follow = false;
+    bool randomMode = false;
 }RunConfig;
 
 static RunConfig _config;
@@ -215,6 +216,7 @@ void usage()
     printf("--stride N              Increment by N keys at a time\n");
     printf("--share M/N             Divide the keyspace into N equal shares, process the Mth share\n");
     printf("--continue FILE         Save/load progress from FILE\n");
+    printf("--random                Generate random keys instead of sequential\n");
 }
 
 
@@ -401,7 +403,7 @@ int run()
         // Get device context
         KeySearchDevice *d = getDeviceContext(_devices[_config.device], _config.blocks, _config.threads, _config.pointsPerThread);
 
-        KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride);
+        KeyFinder f(_config.nextKey, _config.endKey, _config.compression, d, _config.stride, _config.randomMode);
 
         f.setResultCallback(resultCallback);
         f.setStatusInterval(_config.statusInterval);
@@ -517,6 +519,7 @@ int main(int argc, char **argv)
     parser.add("", "--continue", true);
     parser.add("", "--share", true);
     parser.add("", "--stride", true);
+    parser.add("", "--random", false);
 
     try {
         parser.parse(argc, argv);
@@ -602,6 +605,8 @@ int main(int argc, char **argv)
                 }
             } else if(optArg.equals("-f", "--follow")) {
                 _config.follow = true;
+            } else if(optArg.equals("", "--random")) {
+                _config.randomMode = true;
             }
 
 		} catch(std::string err) {

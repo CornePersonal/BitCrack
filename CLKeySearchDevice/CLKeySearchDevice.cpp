@@ -1,4 +1,5 @@
 #include <cmath>
+#include <random>
 #include "Logger.h"
 #include "util.h"
 #include "CLKeySearchDevice.h"
@@ -184,7 +185,7 @@ void CLKeySearchDevice::setIncrementor(secp256k1::ecpoint &p)
     _clContext->copyHostToDevice(buf, _yInc, 8 * sizeof(unsigned int));
 }
 
-void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride)
+void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, const secp256k1::uint256 &stride, bool randomMode)
 {
     if(start.cmp(secp256k1::N) >= 0) {
         throw KeySearchException("Starting key is out of range");
@@ -195,6 +196,8 @@ void CLKeySearchDevice::init(const secp256k1::uint256 &start, int compression, c
     _stride = stride;
 
     _compression = compression;
+
+    _randomMode = randomMode;
 
     try {
         allocateBuffers();
@@ -215,6 +218,11 @@ void CLKeySearchDevice::doStep()
 {
     try {
         uint64_t numKeys = (uint64_t)_points;
+
+        // If in random mode, regenerate random keys for each iteration
+        if(_randomMode && _iterations > 0) {
+            generateStartingPoints();
+        }
 
         if(_iterations < 2 && _start.cmp(numKeys) <= 0) {
 
@@ -536,14 +544,45 @@ void CLKeySearchDevice::generateStartingPoints()
 
     Logger::log(LogLevel::Info, "Generating " + util::formatThousands(totalPoints) + " starting points (" + util::format("%.1f", (double)totalMemory / (double)(1024 * 1024)) + "MB)");
 
-    // Generate key pairs for k, k+1, k+2 ... k + <total points in parallel - 1>
-    secp256k1::uint256 privKey = _start;
+    if(_randomMode) {
+        // Generate random keys
+        std::random_device rd;
+        std::mt19937_64 gen(rd());
+        std::uniform_int_distribution<uint64_t> dis;
 
-    exponents.push_back(privKey);
+        for(uint64_t i = 0; i < totalPoints; i++) {
+            // Generate a random 256-bit key by filling 8 32-bit values
+            unsigned int key[8];
+            for(int j = 0; j < 4; j++) {
+                uint64_t randomVal = dis(gen);
+                key[j*2] = (unsigned int)(randomVal & 0xFFFFFFFF);
+                key[j*2 + 1] = (unsigned int)(randomVal >> 32);
+            }
+            
+            secp256k1::uint256 privKey(key);
+            
+            // Ensure the key is within valid range (less than N)
+            if(privKey.cmp(secp256k1::N) >= 0) {
+                privKey = privKey.sub(secp256k1::N);
+            }
+            
+            // Ensure the key is not zero
+            if(privKey.isZero()) {
+                privKey = secp256k1::uint256(1);
+            }
+            
+            exponents.push_back(privKey);
+        }
+    } else {
+        // Generate key pairs for k, k+1, k+2 ... k + <total points in parallel - 1>
+        secp256k1::uint256 privKey = _start;
 
-    for(uint64_t i = 1; i < totalPoints; i++) {
-        privKey = privKey.add(_stride);
         exponents.push_back(privKey);
+
+        for(uint64_t i = 1; i < totalPoints; i++) {
+            privKey = privKey.add(_stride);
+            exponents.push_back(privKey);
+        }
     }
 
     unsigned int *privateKeys = new unsigned int[8 * totalPoints];
