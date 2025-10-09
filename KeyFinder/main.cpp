@@ -376,9 +376,14 @@ int run()
     }
 
     Logger::log(LogLevel::Info, "Compression: " + getCompressionString(_config.compression));
-    Logger::log(LogLevel::Info, "Starting at: " + _config.nextKey.toString());
-    Logger::log(LogLevel::Info, "Ending at:   " + _config.endKey.toString());
-    Logger::log(LogLevel::Info, "Counting by: " + _config.stride.toString());
+    
+    if(_config.randomMode) {
+        Logger::log(LogLevel::Info, "Mode: Random key generation");
+    } else {
+        Logger::log(LogLevel::Info, "Starting at: " + _config.nextKey.toString());
+        Logger::log(LogLevel::Info, "Ending at:   " + _config.endKey.toString());
+        Logger::log(LogLevel::Info, "Counting by: " + _config.stride.toString());
+    }
 
     try {
 
@@ -646,6 +651,18 @@ int main(int argc, char **argv)
 			_config.targets.push_back(ops[i]);
 		}
 	}
+    
+    // Random mode is incompatible with --share and --continue
+    if(_config.randomMode) {
+        if(optShares) {
+            Logger::log(LogLevel::Error, "--random cannot be used with --share");
+            return 1;
+        }
+        if(_config.checkpointFile.length() > 0) {
+            Logger::log(LogLevel::Error, "--random cannot be used with --continue");
+            return 1;
+        }
+    }
     
     // Calculate where to start and end in the keyspace when the --share option is used
     if(optShares) {
